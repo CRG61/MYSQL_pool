@@ -26,12 +26,14 @@ int main()
 				"zhang san", 20, "male");
 			shared_ptr<Connection> sp = cp->getConnection();
 			sp->update(sql);*/
+
+            //这是不使用连接池的情况
 			Connection conn;
 			char sql[1024] = { 0 };
 			sprintf(sql, "insert into user(name,age,sex) values('%s',%d,'%s')",
 				"zhang san", 20, "male");
 			conn.connect("127.0.0.1", 3306, "root", "123456", "chat");
-			conn.update(sql);
+			conn.update(sql); //隐式类型转换
 		} });
     std::thread t2([]()
               {

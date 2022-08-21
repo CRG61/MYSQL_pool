@@ -114,7 +114,7 @@ void ConnectionPool::produceConnection()
         while (!_connectionQue.empty())
         {
             // C++的条件变量语法也和Linux不同，查一下
-            cv.wait(lock); //队列不空，则生产线程阻塞等待
+            cv.wait(lock); //队列不空，则生产线程阻塞等待   被唤醒后又会while循环检查队列，只有队列空了才会真的创建新连接
         }
 
         //连接数量未达上限，创建连接
@@ -156,39 +156,39 @@ std::shared_ptr<Connection> ConnectionPool::getConnection()
 
     std::shared_ptr<Connection> sp(_connectionQue.front(),
                                    [&](Connection *pcon)
-                                   {
+                                   {//这个捕获范围应该限定在shared_ptr本身
                                        // 这里是在服务器应用线程中调用的，所以一定要考虑队列的线程安全操作
                                        std::unique_lock<std::mutex> lock(_queueMutex);
                                        pcon->refreshAliveTime();
                                        _connectionQue.push(pcon);
                                    });
     _connectionQue.pop();
-    cv.notify_all();   // 消费完连接以后，通知生产者线程检查一下，如果队列为空了，赶紧生产连接
+    cv.notify_all(); // 取走一个连接以后，通知生产者线程检查一下，如果队列为空了，赶紧生产连接
     return sp;
 }
 
 void ConnectionPool::scanConnection()
 {
-    for(;;)
+    for (;;)
     {
-        //通过sleep模拟定时效果 
+        //通过sleep模拟定时效果
         std::this_thread::sleep_for(std::chrono::seconds(_maxIdleTime));
 
-        //扫描整个队列，释放多余连接
+        //只需要检查队头的连接是否超时，因为是按顺序放入的
         std::unique_lock<std::mutex> lock(_queueMutex);
         while (_connectionCnt > _initSize)
-		{
-			Connection *p = _connectionQue.front();
-			if (p->getAliveTime() >= (_maxIdleTime * 1000))
-			{
-				_connectionQue.pop();
-				_connectionCnt--;
-				delete p; // 调用~Connection()释放连接
-			}
-			else
-			{
-				break; // 队头的连接没有超过_maxIdleTime，其它连接肯定没有
-			}
-		}
+        {
+            Connection *p = _connectionQue.front();
+            if (p->getAliveTime() >= (_maxIdleTime * 1000))
+            {
+                _connectionQue.pop();
+                _connectionCnt--;
+                delete p; // 调用~Connection()释放连接
+            }
+            else
+            {
+                break; // 队头的连接没有超过_maxIdleTime，其它连接肯定没有
+            }
+        }
     }
 }
